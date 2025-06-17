@@ -11,29 +11,36 @@ st.set_page_config(
 )
 
 # --- API Configuration ---
-API_BASE_URL = 'https://apis.robwiederstein.org'
+# Pointing to the live API on your DigitalOcean Droplet
+API_BASE_URL = 'http://134.199.195.105:8000'
+
 # --- Functions ---
 
 @st.cache_data(ttl=600)  # Cache the data for 10 minutes
-def fetch_states_data(sort_by: str):
+def fetch_states_data(filter_query: str = ""):
     """
-    Fetches state data from the API, sorted by the selected column.
-    Uses Streamlit's caching to avoid redundant API calls.
+    Fetches state data from the API. If a filter_query is provided,
+    it passes it to the API to get a filtered list.
 
     Args:
-        sort_by (str): The column name to sort the data by.
+        filter_query (str): The text to filter state names by.
 
     Returns:
         list | None: A list of state data dictionaries, or None if an error occurs.
     """
-    api_url = f"{API_BASE_URL}/states?sort_by={sort_by}"
+    # Construct the base URL
+    api_url = f"{API_BASE_URL}/states"
+    
+    # If the user provided filter text, add it as a query parameter.
+    # IMPORTANT: Verify the parameter name (e.g., 'name_contains') matches your API.
+    if filter_query:
+        api_url += f"?name_contains={filter_query}"
+        
     try:
-        response = requests.get(api_url, timeout=30) # Increased timeout to 30s for cold starts
-        # Raise an exception for bad status codes (4xx or 5xx)
+        response = requests.get(api_url, timeout=10)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        # Handle connection errors, timeouts, etc.
         st.error(f"Error fetching data from API: {e}")
         return None
 
@@ -46,89 +53,65 @@ st.markdown("Explore and sort data from the 1970s `state.x77` dataset, served vi
 # --- User Controls in the Sidebar ---
 st.sidebar.header("Controls")
 
-# A dictionary to map user-friendly names to the actual column names for the API
-sort_options = {
-    "Name": "name",
-    "Population": "population",
-    "Income": "income",
-    "Illiteracy (%)": "illiteracy",
-    "Life Expectancy (yrs)": "life_exp",
-    "Murder Rate": "murder",
-    "High-School Graduates (%)": "hs_grad",
-    "Days with Frost": "frost",
-    "Area (sq. mi)": "area"
-}
-
-# Create a dropdown (selectbox) for sorting
-selected_option = st.sidebar.selectbox(
-    "Sort data by:",
-    options=list(sort_options.keys()),
-    index=0  # Default to 'Name'
+# NEW: A text input for live filtering, replacing the old sort dropdown.
+filter_text = st.sidebar.text_input(
+    "Filter states by name:",
+    placeholder="e.g., 'New' or 'Texas'"
 )
-
-# Get the corresponding API column name from the user's selection
-sort_by_column = sort_options[selected_option]
 
 # --- Data Display ---
 
-# Fetch data based on user selection
-with st.spinner(f"Fetching data sorted by {selected_option}..."):
-    data = fetch_states_data(sort_by_column)
+# Fetch data based on the user's filter text
+# The st.spinner will show while the API call is running.
+with st.spinner(f"Searching for states matching '{filter_text}'..." if filter_text else "Fetching all states..."):
+    data = fetch_states_data(filter_text)
 
 if data:
-    # Convert the list of dictionaries to a Pandas DataFrame for better display
+
+    if isinstance(data, dict):
+        data = [data]
+        
     df = pd.DataFrame(data)
 
-    # --- FIX for KeyError ---
-    # Define the desired column order
+    # Reorder columns for a cleaner presentation
     desired_column_order = [
-        'name', 'population', 'income', 'area', 'hs_grad',
+        'state_name', 'population', 'income', 'area', 'hs_grad',
         'murder', 'illiteracy', 'life_exp', 'frost'
     ]
-    
-    # Filter the desired order to only include columns that actually exist in the DataFrame.
-    # This makes the code robust against missing or differently named columns from the API.
     existing_columns_in_order = [col for col in desired_column_order if col in df.columns]
-    
-    # Get any other columns that were in the df but not in our desired list
     other_columns = [col for col in df.columns if col not in existing_columns_in_order]
+    df_display = df[existing_columns_in_order + other_columns]
 
-    # Reorder the DataFrame using the new, safe column list
-    df = df[existing_columns_in_order + other_columns]
-    # --- END FIX ---
+    st.success(f"Loaded {len(df_display)} states.")
 
-    st.success(f"Displaying data sorted by **{selected_option}**.")
-
-    # Display the DataFrame as an interactive table
+    # Display the DataFrame. Users can now sort by clicking column headers.
     st.dataframe(
-        df,
-        key=f"states_table_{sort_by_column}", # FIX: Add a dynamic key
+        df_display,
         use_container_width=True,
         hide_index=True,
-        # Configure column display properties
         column_config={
-            "name": st.column_config.TextColumn("State Name", help="The name of the U.S. state."),
+            "state_name": st.column_config.TextColumn("State Name", help="The name of the U.S. state."),
             "population": st.column_config.NumberColumn("Population", help="Estimated population in 1975.", format="%d"),
             "income": st.column_config.NumberColumn("Income", help="Per capita income in 1974.", format="$%d"),
-            "illiteracy": st.column_config.NumberColumn("Illiteracy (%)", help="Illiteracy rate in 1970 (percent of population).", format="%.2f%%"),
+            "illiteracy": st.column_config.NumberColumn("Illiteracy (%)", help="Illiteracy rate in 1970.", format="%.2f%%"),
             "life_exp": st.column_config.NumberColumn("Life Exp. (yrs)", help="Life expectancy in years (1969-71).", format="%.2f"),
-            "murder": st.column_config.NumberColumn("Murder Rate", help="Murder and non-negligent manslaughter rate per 100,000 population in 1976.", format="%.2f"),
+            "murder": st.column_config.NumberColumn("Murder Rate", help="Murder rate per 100,000 population in 1976.", format="%.2f"),
             "hs_grad": st.column_config.NumberColumn("HS Grad (%)", help="Percent of high-school graduates in 1970.", format="%.1f%%"),
-            "frost": st.column_config.NumberColumn("Frost Days", help="Mean number of days with minimum temperature below freezing (1931-1960) in capital or large city.", format="%d"),
+            "frost": st.column_config.NumberColumn("Frost Days", help="Mean number of days with minimum temperature below freezing.", format="%d"),
             "area": st.column_config.NumberColumn("Area (sq. mi)", help="Land area in square miles.", format="%d")
         }
     )
 else:
-    st.warning("Could not retrieve data. The API might be starting up or temporarily unavailable.")
+    st.warning("Could not retrieve data, or no states matched your filter.")
 
 # --- Footer ---
 st.sidebar.markdown("---")
 st.sidebar.info(
     "This app is powered by a Python [FastAPI](https://fastapi.tiangolo.com/) backend "
-    "and a [PostgreSQL](https://www.postgresql.org/) database, all hosted on a vps at "
+    "and a [PostgreSQL](https://www.postgresql.org/) database, all deployed on "
     "[DigitalOcean](https://www.digitalocean.com/)."
 )
+# This footer URL is also something you might want to update later
 st.sidebar.markdown(
-    "View API Docs: [states-api-1fug.onrender.com/docs](https://states-api-1fug.onrender.com/docs)"
+    f"View Live API Docs: [{API_BASE_URL}/docs]({API_BASE_URL}/docs)"
 )
-
