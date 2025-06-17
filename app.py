@@ -10,6 +10,22 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Google Analytics Tracking ---
+# This code injects the GA tag into the Streamlit app's HTML head.
+GA_MEASUREMENT_ID = "G-FW3VK54YNC"  # <-- Your specific ID
+
+ga_script = f"""
+    <script async src="https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){{dataLayer.push(arguments);}}
+      gtag('js', new Date());
+      gtag('config', '{GA_MEASUREMENT_ID}');
+    </script>
+"""
+st.components.v1.html(ga_script, height=0)
+# --- End of Google Analytics section ---
+
 # --- API Configuration ---
 # Pointing to the live API on your DigitalOcean Droplet
 API_BASE_URL = 'https://apis.robwiederstein.org/states'
