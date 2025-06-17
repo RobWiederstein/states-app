@@ -12,7 +12,7 @@ st.set_page_config(
 
 # --- API Configuration ---
 # Pointing to the live API on your DigitalOcean Droplet
-API_BASE_URL = 'http://134.199.195.105:8000'
+API_BASE_URL = 'https://apis.robwiederstein.org/states'
 
 # --- Functions ---
 
@@ -70,7 +70,7 @@ if data:
 
     if isinstance(data, dict):
         data = [data]
-        
+
     df = pd.DataFrame(data)
 
     # Reorder columns for a cleaner presentation
